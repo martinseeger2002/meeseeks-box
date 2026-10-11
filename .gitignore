@@ -1,0 +1,14 @@
+# secrets
+box.env
+.token
+# runtime state and logs - never commit these
+home/
+run/
+venv/
+vendor/
+relay/*.log
+relay/*.json
+relay/.view-token
+__pycache__/
+*.bak*
+relay/deleted-sessions/

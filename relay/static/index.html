@@ -1,0 +1,946 @@
+<!DOCTYPE html>
+<!-- rq-mobile-3 -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#14161b" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#f4f5f7" media="(prefers-color-scheme: light)">
+<title>Qwen Remote</title>
+<!-- PWA: installable on iOS via Safari's Share > Add to Home Screen.
+     iOS ignores the manifest's icons for the home-screen tile and uses
+     apple-touch-icon, and it needs apple-mobile-web-app-capable to launch without
+     Safari's chrome — hence the duplication with the manifest below. -->
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="apple-touch-icon" href="/icon-180.png">
+<link rel="icon" type="image/png" sizes="192x192" href="/icon-192.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Qwen">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<style>
+:root{--bg:#14161b;--panel:#1d2026;--text:#e8eaf0;--dim:#9aa0ad;--accent:#e8843c;
+--ok:#4cc38a;--err:#e06c5a;--code:#262a33;--border:#2c313b}
+@media(prefers-color-scheme:light){:root{--bg:#f4f5f7;--panel:#fff;--text:#1c1e24;
+--dim:#6a7280;--code:#eceef2;--border:#d9dce2}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font:15px/1.5 system-ui,sans-serif;
+display:flex;flex-direction:column;height:var(--vh,100dvh)}
+header{display:flex;gap:8px;align-items:center;padding:10px 14px;
+padding-top:calc(10px + env(safe-area-inset-top));background:var(--panel);
+border-bottom:1px solid var(--border);flex-wrap:wrap}
+.dot{width:10px;height:10px;border-radius:50%;background:var(--dim)}
+.dot.on{background:var(--ok)}.dot.off{background:var(--err)}
+header b{font-size:15px}
+header .spacer{flex:1}
+select,button{background:var(--code);color:var(--text);border:1px solid var(--border);
+border-radius:8px;padding:8px 12px;font-size:13px;min-height:36px;touch-action:manipulation}
+button.act{background:var(--accent);color:#fff;border:none;font-weight:600}
+#log{flex:1;overflow-y:auto;overscroll-behavior:contain;-webkit-overflow-scrolling:touch;
+padding:16px;display:flex;flex-direction:column;gap:12px}
+#feedwrap{flex:1;position:relative;display:flex;min-height:0}
+#log{flex:1;min-height:0}
+#jump{position:absolute;left:50%;bottom:16px;transform:translateX(-50%) scale(.8);
+ width:44px;height:44px;border-radius:50%;border:1px solid var(--border);
+ background:var(--panel);color:var(--accent);font-size:20px;line-height:1;
+ display:flex;align-items:center;justify-content:center;padding:0;
+ box-shadow:0 4px 14px rgba(0,0,0,.35);opacity:0;pointer-events:none;
+ transition:opacity .15s ease,transform .15s ease;z-index:5}
+#jump.show{opacity:1;pointer-events:auto;transform:translateX(-50%) scale(1)}
+#jump.new{color:#fff;background:var(--accent);border-color:var(--accent)}
+
+.msg{max-width:760px;white-space:pre-wrap;word-break:break-word;border-radius:12px;padding:10px 14px}
+.msg.user{align-self:flex-end;background:var(--accent);color:#fff}
+.msg.assistant{align-self:flex-start;background:var(--panel);border:1px solid var(--border)}
+.msg.meta{align-self:center;color:var(--dim);font-size:12.5px;background:none;padding:0}
+.msg.err{align-self:flex-start;background:var(--panel);border:1px solid var(--err)}
+.msg img{max-width:min(100%,420px);border-radius:10px;display:block;margin:6px 0}
+.msg a{color:var(--accent)}
+pre{background:var(--code);padding:10px;border-radius:8px;overflow-x:auto;white-space:pre-wrap}
+code{background:var(--code);padding:1px 5px;border-radius:5px;font-size:13.5px}
+pre code{background:none;padding:0}
+details{color:var(--dim);font-size:13px}
+details summary{cursor:pointer;padding:4px 0;min-height:28px}
+.tool{border:1px dashed var(--border);border-radius:8px;padding:6px 10px;font-size:13px;color:var(--dim)}
+#deskwrap{display:flex;align-items:center;gap:6px;font-size:13px;opacity:.85;
+  white-space:nowrap;padding:4px 6px}
+#deskwrap input{width:20px;height:20px}
+#deskwrap.on{opacity:1;color:var(--err);font-weight:600}   /* red: it moves your mouse */
+#eyes{display:none;font-size:12px;color:var(--err);border:1px solid var(--err);
+  border-radius:999px;padding:3px 9px;white-space:nowrap}
+#eyes.on{display:inline-block}
+#sharewrap.on{opacity:1;color:var(--err);font-weight:600}  /* red: people can read it */
+#sharewrap input{width:20px;height:20px}
+#sharewrap{display:flex;align-items:center;gap:6px;font-size:13px;opacity:.85;
+  white-space:nowrap;padding:4px 6px}
+#autowrap,#expwrap{display:flex;align-items:center;gap:6px;font-size:13px;opacity:.85;
+  white-space:nowrap;padding:4px 6px}
+#autowrap input,#expand{width:20px;height:20px}  /* a 44px-ish target, not a 13px one */
+#autowrap.on,#expwrap.on{opacity:1;color:var(--accent);font-weight:600}
+.approve{border:2px solid var(--accent);border-radius:12px;padding:12px;background:var(--panel)}
+.approve .in{background:var(--code);border-radius:8px;padding:8px;margin:8px 0;
+font:12.5px/1.4 ui-monospace,monospace;max-height:180px;overflow:auto;white-space:pre-wrap;word-break:break-all}
+.approve button{min-height:44px;padding:10px 18px}
+footer{padding:10px 14px;padding-bottom:calc(10px + env(safe-area-inset-bottom));
+background:var(--panel);border-top:1px solid var(--border);display:flex;gap:8px}
+footer input{flex:1;min-width:0;background:var(--bg);border:1px solid var(--border);border-radius:10px;
+color:var(--text);padding:11px 12px;font-size:16px;min-height:44px}
+footer input:focus{outline:none;border-color:var(--accent)}
+footer button{min-height:44px}
+/* splash */
+#splash{position:fixed;inset:0;z-index:20;background:var(--bg);overflow-y:auto;
+ padding:calc(24px + env(safe-area-inset-top)) 16px calc(24px + env(safe-area-inset-bottom))}
+#splash.hidden{display:none}
+.splash-inner{max-width:560px;margin:0 auto}
+#splash h1{margin:0 0 2px;font-size:22px}
+#splash .sub{margin:0 0 20px;color:var(--dim);font-size:13px}
+.act.big{width:100%;padding:14px;font-size:16px;border-radius:10px}
+.list-head{display:flex;align-items:center;justify-content:space-between;
+ margin:26px 0 8px;color:var(--dim);font-size:12px;text-transform:uppercase;letter-spacing:.06em}
+.ghost{background:none;border:1px solid var(--border);color:var(--dim);
+ border-radius:8px;padding:5px 9px;font:inherit;font-size:12px;cursor:pointer}
+.ghost:active{background:var(--code)}
+/* Swipe-to-reveal, the iOS way: the row slides left to expose Edit and Delete,
+   which are otherwise not on screen at all. The actions sit UNDER the sliding
+   surface rather than beside it, so nothing reflows as it moves. */
+.srow{position:relative;overflow:hidden;border:1px solid var(--border);
+ border-radius:10px;margin-bottom:8px;background:var(--panel)}
+.srow .actions{position:absolute;inset:0 0 0 auto;display:flex}
+.srow .actions button{border:none;font:inherit;font-size:13px;color:#fff;
+ width:78px;cursor:pointer}
+.srow .actions .edit{background:#4a5568}
+.srow .actions .del{background:var(--err)}
+.srow .slide{position:relative;display:flex;align-items:center;gap:10px;padding:12px;
+ background:var(--panel);transition:transform .18s ease;touch-action:pan-y}
+.srow.open .slide{transform:translateX(-156px)}
+.srow .body{flex:1;min-width:0;cursor:pointer}
+.hint{color:var(--dim);font-size:11px;margin:-2px 2px 10px}
+.msg img{max-width:100%;border-radius:8px;display:block}
+.cap{color:var(--dim);font-size:11px;margin-top:3px}
+.act.attach{padding:0 13px;font-size:20px;line-height:1;background:var(--code);
+ color:var(--text)}
+#pending{display:none;gap:8px;padding:8px 14px;background:var(--panel);
+ border-top:1px solid var(--border);overflow-x:auto}
+#pending.on{display:flex}
+#pending .thumb{position:relative;flex:none}
+#pending img{height:54px;border-radius:7px;display:block}
+#pending .x{position:absolute;top:-6px;right:-6px;width:20px;height:20px;border:none;
+ border-radius:50%;background:var(--err);color:#fff;font-size:12px;line-height:20px;
+ padding:0;cursor:pointer}
+#pending .up{font-size:11px;color:var(--dim);align-self:center}
+/* Full-size viewer for the images the agent shares. The chat thumb caps at 420px,
+   which is unreadable for a desktop screenshot; this shows the same bytes bigger. */
+.msg img{cursor:zoom-in}
+#zoom{position:fixed;inset:0;z-index:40;background:rgba(6,7,9,.93);display:none;
+ touch-action:none;overscroll-behavior:contain}
+#zoom.on{display:block}
+#zimg{position:absolute;inset:0;margin:auto;max-width:100%;max-height:100%;
+ object-fit:contain;background:var(--bg);cursor:grab}
+#zoom.drag #zimg{cursor:grabbing}
+.zbtn{background:rgba(29,32,38,.8);color:var(--text);border:1px solid var(--border);
+ border-radius:10px;min-width:42px;min-height:42px;padding:8px 13px;font-size:15px;
+ cursor:pointer;line-height:1}
+.zbtn:active{background:var(--accent)}
+#zclose{position:absolute;top:calc(10px + env(safe-area-inset-top));right:12px;
+ font-size:19px;color:#fff}
+#zbar{position:absolute;left:50%;transform:translateX(-50%);
+ bottom:calc(14px + env(safe-area-inset-bottom));display:flex;gap:6px;align-items:center}
+#zbar span{background:rgba(29,32,38,.8);border:1px solid var(--border);border-radius:10px;
+ padding:12px 10px;font-size:13px;color:var(--dim);font-variant-numeric:tabular-nums}
+/* A question from the agent: deliberately unmissable, because the turn is stopped
+   until it is answered. */
+.ask{border:1px solid var(--accent);border-radius:10px;padding:12px;margin:8px 0;
+ background:var(--panel)}
+.ask .q{font-size:15px;margin-bottom:4px}
+.ask pre{background:var(--code);padding:9px;border-radius:7px;overflow-x:auto;
+ font-size:12.5px;margin:8px 0}
+.ask .opts{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
+.ask .opts button{flex:1;min-width:110px;padding:11px;border:none;border-radius:8px;
+ font:inherit;font-size:14px;background:var(--code);color:var(--text);cursor:pointer}
+.ask .opts button.yes{background:var(--ok);color:#06240f}
+.ask .opts button.no{background:var(--err);color:#2a0a06}
+.ask.done{opacity:.6;border-color:var(--border)}
+.ask .chosen{margin-top:8px;font-size:13px;color:var(--ok)}
+/* Working indicator: sits directly above the composer so it is in view while you
+   wait, and carries an elapsed clock — on a local model the honest answer to "is it
+   stuck?" is usually "no, it has been 24 seconds". */
+#work{display:none;align-items:center;gap:9px;padding:8px 14px;
+ background:var(--panel);border-top:1px solid var(--border);color:var(--dim);font-size:13px}
+#work.on{display:flex}
+#work .sp{width:14px;height:14px;border:2px solid var(--border);border-top-color:var(--accent);
+ border-radius:50%;animation:spin .8s linear infinite;flex:none}
+#work .what{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#work .secs{font-variant-numeric:tabular-nums}
+@keyframes spin{to{transform:rotate(360deg)}}
+@media(prefers-reduced-motion:reduce){#work .sp{animation-duration:2.4s}}
+.srow .nm{font-size:15px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.srow .meta{color:var(--dim);font-size:12px;margin-top:3px}
+.srow .cur{color:var(--ok)}
+.srow input.rename{width:100%;font:inherit;font-size:15px;background:var(--code);
+ color:var(--text);border:1px solid var(--accent);border-radius:6px;padding:5px 7px}
+.icon{background:none;border:none;color:var(--dim);font-size:16px;padding:6px;cursor:pointer}
+.icon:active{color:var(--accent)}
+.empty{color:var(--dim);font-size:13px;padding:10px 2px}
+
+/* ── Meeseeks box: Rick's terms, the summon, and the admin kill switch ── */
+#terms{position:fixed;inset:0;z-index:60;background:var(--bg);display:none;align-items:center;
+ justify-content:center;padding:16px}
+#terms.on{display:flex}
+#terms .card{max-width:420px;width:100%;background:var(--panel);border-radius:16px;padding:22px;
+ border:1px solid rgba(127,127,127,.25)}
+#terms h2{margin:0 0 4px;font-size:19px}
+#terms blockquote{margin:14px 0;padding:10px 14px;border-left:4px solid #3fa9f5;font-size:17px;
+ font-style:italic}
+#terms .who{color:var(--dim);font-size:13px;margin:-6px 0 14px 18px}
+#terms label{display:flex;gap:10px;align-items:flex-start;margin:10px 0 18px;cursor:pointer}
+#terms input{width:22px;height:22px;flex:none;margin-top:1px}
+#terms button{width:100%;padding:14px;font-size:17px;border-radius:12px}
+#terms button:disabled{opacity:.4}
+#mee{position:fixed;left:50%;bottom:18vh;z-index:70;pointer-events:none;
+ transform:translateX(-50%) scale(0);transform-origin:50% 100%;opacity:0;text-align:center}
+#mee.pop{animation:meepop 2.8s ease-out forwards}
+@keyframes meepop{0%{transform:translateX(-50%) scale(0);opacity:1}
+ 12%{transform:translateX(-50%) scale(1.15)}20%{transform:translateX(-50%) scale(1)}
+ 85%{transform:translateX(-50%) scale(1);opacity:1}100%{transform:translateX(-50%) scale(.2);opacity:0}}
+#mee .bubble{background:#fff;color:#111;border-radius:14px;padding:8px 12px;font-weight:700;
+ margin-bottom:8px;white-space:nowrap;box-shadow:0 4px 18px rgba(0,0,0,.3)}
+#startnew:not(.ready){visibility:hidden}
+#startnew.meebox{background:none;border:none;padding:6px 0 0;color:var(--dim);font-size:14px}
+#startnew.meebox img{display:block;margin:0 auto 6px;transition:transform .15s ease-out,filter .15s ease-out}
+#startnew.meebox:active img,#startnew.meebox.pressed img{transform:scale(1.08);
+ filter:drop-shadow(0 0 10px rgba(110,255,190,.85)) drop-shadow(0 0 22px rgba(63,169,245,.55))}
+[hidden]{display:none!important}
+#desknote{font-size:12px;color:var(--dim);border:1px dashed rgba(127,127,127,.45);
+ border-radius:10px;padding:2px 8px;white-space:nowrap}
+ border-radius:10px;padding:2px 4px 2px 8px}
+</style>
+</head>
+<body>
+<!-- Splash: what the app opens on. Pick up where you left off, or start fresh.
+     Hidden once a session is chosen; the "Sessions" button brings it back. -->
+<div id="splash">
+  <div class="splash-inner">
+    <h1>Qwen Remote</h1>
+    <p class="sub">one Qwen agent, one box</p>
+    <button class="act big" id="startnew">Start new session</button>
+    <div class="list-head"><span>Previous sessions</span><button id="refresh" class="ghost">Refresh</button></div>
+    <div class="hint">Swipe a session left for Edit and Delete.</div>
+    <div id="slist"><div class="empty">Loading…</div></div>
+  </div>
+</div>
+
+<div id="terms"><div class="card">
+ <h2 id="termsTitle">Meeseeks Box</h2>
+ <div class="who">Press the button, make a request, and a Mr. Meeseeks appears to do it. He
+  can't stop existing until the job is done.</div>
+ <blockquote id="termsText"></blockquote>
+ <div class="who">Rick, handing over the box</div>
+ <label><input type="checkbox" id="termsOk"><span>I get it. I'll keep my requests simple.</span></label>
+ <button class="act" id="termsGo" disabled>Press the button</button>
+</div></div>
+<div id="mee"><div class="bubble">I'm Mr. Meeseeks! Look at me!</div>
+ <img src="data:image/png;base64,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" width="104" height="200" alt=""></div>
+<header>
+ <span class="dot" id="dot"></span><b>Qwen Remote</b>
+ <button id="sessbtn" class="ghost" title="sessions">Sessions</button>
+ <span class="spacer"></span>
+ <select id="mode" title="permission mode (applies now, keeps the chat)">
+  <option value="default">ask per tool</option>
+  <option value="acceptEdits">auto-edits</option>
+  <option value="plan">plan mode</option>
+  <option value="bypassPermissions">auto (no asks)</option>
+ </select>
+ <label id="autowrap" title="no approvals, and keep going until it says it is done">
+  <input type="checkbox" id="auto"><span>keep going</span>
+ </label>
+ <label id="expwrap" title="open every thinking block, tool call and tool result as it arrives">
+  <input type="checkbox" id="expand"><span>expand all</span>
+ </label>
+ <label id="sharewrap" title="publish a read-only live view of this session">
+  <input type="checkbox" id="share"><span>share</span>
+ </label>
+ <label id="deskwrap" title="let the agent use this machine's keyboard, mouse and screen">
+  <input type="checkbox" id="desktop"><span>drive desktop</span>
+ </label>
+ <!-- Guest boxes have no desktop: the checkbox above is hidden there and this note takes
+      its place. Planned: a virtual machine of their own, or another computer's desktop. -->
+ <span id="desknote" hidden title="This box has no screen of its own yet. A virtual machine, or the desktop of another computer, may be added later.">no desktop yet</span>
+ <span id="eyes" title="people watching the shared stream"></span>
+ <button id="newbtn">New chat</button>
+</header>
+<div id="feedwrap"><div id="log"></div>
+ <button id="jump" title="jump to the newest" aria-label="jump to the newest">&#8595;</button>
+</div>
+<div id="pending"></div>
+<div id="work">
+ <span class="sp"></span>
+ <span class="what" id="workwhat">working…</span>
+ <span class="secs" id="worksecs"></span>
+ <button class="ghost" id="stopbtn" title="abandon this turn">Stop</button>
+</div>
+<footer>
+ <!-- accept=image/* with no capture attribute lets iOS offer BOTH the camera roll
+      and taking a new photo; adding capture would force the camera. -->
+ <input type="file" id="pick" accept="image/*" multiple hidden>
+ <button class="act attach" id="attach" title="attach an image">+</button>
+ <input id="in" placeholder="message, or /command…" autocomplete="off"
+        autocapitalize="sentences" autocorrect="off" spellcheck="false" enterkeyhint="send">
+ <button class="act" id="send">Send</button>
+</footer>
+<!-- Image viewer: one overlay reused by every image in the log. Buttons are real
+     <button>s so they work with a screen reader and without JS-driven focus. -->
+<div id="zoom" role="dialog" aria-label="Image">
+ <img id="zimg" alt="">
+ <button id="zclose" class="zbtn" title="Close (Esc)" aria-label="Close">&#10005;</button>
+ <div id="zbar">
+  <button id="zout" class="zbtn" title="Zoom out" aria-label="Zoom out">&minus;</button>
+  <span id="zpct">100%</span>
+  <button id="zin" class="zbtn" title="Zoom in" aria-label="Zoom in">+</button>
+  <button id="zfit" class="zbtn" title="Fit to screen">Fit</button>
+ </div>
+</div>
+<script>
+const log=document.getElementById('log'),inp=document.getElementById('in'),
+dot=document.getElementById('dot'),modeSel=document.getElementById('mode');
+// The viewer is THIS page, served at /watch. Same renderer, same markup, same CSS —
+// so a shared stream cannot drift from what the operator sees, which a second page
+// would have done the first time either was edited. Read-only is enforced by the
+// server (every mutating route refuses a viewer, and only /watch/* answers it); what
+// happens here is cosmetic: put away the controls a viewer cannot use.
+const RO=location.pathname.replace(/\/+$/,'')==='/watch';
+const jump=document.getElementById('jump');
+// Following the bottom is the default, and it stops the moment you scroll up — the
+// feed must never drag you away from what you are reading. The arrow is how you say
+// "take me back and keep following".
+//
+// Two things make this harder than "scroll on append". A message is added EMPTY and
+// its content appended after (`const w=add(...,''); w.appendChild(d)`), so scrolling at
+// append time aims at a height the block is not in yet — the taller the block, the
+// further short it lands, which is why it looked broken with everything expanded. And
+// content keeps growing afterwards: images decode, <details> open, fonts swap. So the
+// bottom is re-asserted after the DOM settles, and again whenever the feed changes
+// while we are following.
+// Not every embedding has rAF (old WebViews, test harnesses); a timeout is a fine
+// stand-in, and losing the scroll entirely because of a missing frame hook is not.
+const raf=window.requestAnimationFrame?window.requestAnimationFrame.bind(window)
+ :(f=>setTimeout(f,16));
+let follow=true,pend=false,lastTop=0;
+function atBottom(){return log.scrollHeight-log.scrollTop-log.clientHeight<60}
+function paintJump(){jump.classList.toggle('show',!follow);
+ if(follow)jump.classList.remove('new')}
+function glue(){log.scrollTop=log.scrollHeight}
+function stick(){
+ if(!follow){jump.classList.add('new');paintJump();return}   // reading: badge, don't move
+ if(pend)return;                                             // one per frame is plenty
+ pend=true;
+ raf(()=>{pend=false;if(follow)glue()});
+}
+function toBottom(){follow=true;glue();paintJump();
+ raf(()=>{if(follow)glue()})}              // catch late layout too
+// Anything that changes the feed while following pins it again: the content appended
+// after its container, a tool result arriving, a details block opening.
+new MutationObserver(()=>{if(follow)glue()})
+ .observe(log,{childList:true,subtree:true,characterData:true});
+// Images do not mutate the DOM when they finish decoding, they just get taller. `load`
+// does not bubble, hence the capture.
+log.addEventListener('load',()=>{if(follow)glue()},true);
+// Only a deliberate scroll UP stops the following. Growth can briefly make "am I at the
+// bottom" false without you having touched anything, and treating that as intent is how
+// the feed quietly stopped following in the first place.
+log.addEventListener('scroll',()=>{
+ const t=log.scrollTop,up=t<lastTop-2;lastTop=t;
+ if(up&&!atBottom()){if(follow){follow=false;paintJump()}}
+ else if(atBottom()){if(!follow){follow=true;paintJump()}}
+},{passive:true});
+jump.onclick=toBottom;
+
+let lastTs=0;
+
+// iOS keeps the visual viewport smaller than 100dvh while the keyboard is up;
+// sizing the page off visualViewport keeps the send bar above the keyboard.
+const vv=window.visualViewport;
+function fit(){document.documentElement.style.setProperty('--vh',(vv?vv.height:innerHeight)+'px')}
+if(vv){vv.addEventListener('resize',fit);vv.addEventListener('scroll',fit)}
+addEventListener('orientationchange',fit);fit();
+
+function el(tag,cls,html){const e=document.createElement(tag);if(cls)e.className=cls;
+if(html!==undefined)e.innerHTML=html;return e}
+function esc(s){return s.replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]))}
+// small markdown: code fences, inline code, bold, links, local file paths, images
+function md(t){
+ let s=esc(t);
+ s=s.replace(/```([\s\S]*?)```/g,(m,c)=>'<pre>'+c.replace(/^\n/,'')+'</pre>');
+ s=s.replace(/`([^`\n]+)`/g,'<code>$1</code>');
+ s=s.replace(/\*\*([^*\n]+)\*\*/g,'<b>$1</b>');
+ s=s.replace(/(https?:\/\/[^\s<)]+)/g,m=>'<a href="'+m+'" target="_blank" rel="noopener">'+m+'</a>');
+ s=s.replace(/!\[[^\]]*\]\((\S+?)\)/g,(m,p)=>imgTag(p));
+ s=s.replace(/(^|[\s(])\/(home|tmp)\/[\w./~+@-]+\.(png|jpg|jpeg|gif|webp|svg)/g,
+             (m,pre,p,path,ext)=>pre+imgTag('/file?path='+encodeURIComponent('/'+p+path.slice(0,-(ext.length+1))+'.'+ext))+'&nbsp;('+esc(path)+')');
+ return s}
+function imgTag(p){
+ if(p.startsWith('/'))return '<img src="'+p+'" loading="lazy">';
+ return '<a href="'+p+'" target="_blank">'+p+'</a>'}
+// Every collapsible block is built here, so "expand all" is one decision applied at
+// creation — which is what makes it hold for content that has not arrived yet, not
+// just for what is already on screen.
+let EXPAND=false;
+try{EXPAND=localStorage.getItem('rq_expand')==='1'}catch(e){}
+function det(){const d=el('details');d.open=EXPAND;return d}
+function add(cls,html){const m=el('div',cls,html);log.appendChild(m);stick();return m}
+
+function handle(e){
+ if(e.type==='busy'){setBusy(e.on,e.activity,e.since,e.detail);return}
+ // Replayed user turns. Live ones are added by submit() as you type, so this arrives
+ // only from /sessions/transcript.
+ if(e.type==='you'){
+  // Sent from another device (or replayed from a transcript): draw it. Sent from
+  // this one: submit() already did, and the uid says so.
+  if(e.uid&&log.querySelector('[data-uid="'+e.uid+'"]'))return;
+  (e.images||[]).forEach(u=>{const m=add('msg user','<img src="'+u+'" loading="lazy">');
+    if(e.uid)m.dataset.uid=e.uid});
+  const m=add('msg user',md(e.text)); if(e.uid)m.dataset.uid=e.uid; return}
+ if(e.type==='resumed'){renderTranscript(e.id);return}
+ if(e.type==='ask'){renderAsk(e);return}
+ if(e.type==='answered'){markAnswered(e.id,e.answer);return}
+ if(e.type==='watchers'){paintEyes(e.n);return}
+ if(e.type==='status'){dot.className='dot '+(e.alive?'on':'off');
+  if(e.permission_mode&&e.permission_mode!==modeSel.value)modeSel.value=e.permission_mode;
+  add('msg meta',(e.alive?'session up'+(e.model?' · '+e.model:''):(e.reason||'session down')))}
+ else if(e.type==='log')add('msg meta',esc(e.text));
+ else if(e.type==='clear'){log.replaceChildren();add('msg meta','chat cleared')}
+ else if(e.type==='assistant')e.blocks.forEach(b=>{
+   if(b.kind==='text')add('msg assistant',md(b.text));
+   else if(b.kind==='thinking'){const d=det();d.innerHTML='<summary>thinking…</summary>'+md(b.text);
+     const w=add('msg assistant','');w.appendChild(d)}
+   else if(b.kind==='tool'){const d=el('div','tool','⚙ '+esc(b.name));
+     const s=det();s.innerHTML='<summary>input</summary><div class="in">'+esc(b.input)+'</div>';
+     d.appendChild(s);const w=add('msg assistant','');w.appendChild(d)}
+   else if(b.kind==='image')add('msg assistant','<img src="data:'+b.media_type+';base64,'+b.data+'">')})
+ else if(e.type==='tool_results')e.blocks.forEach(b=>{
+   if(b.kind==='image')add('msg assistant','<img src="data:'+b.media_type+';base64,'+b.data+'">');
+   else if(b.kind==='image_url')add('msg assistant',
+     '<a href="'+b.url+'" target="_blank"><img src="'+b.url+'" loading="lazy" alt="'+esc(b.name||'image')+'"></a>'+
+     '<div class="cap">'+esc(b.name||'')+' · <a href="'+b.url+'" download="'+esc(b.name||'image')+'">save</a></div>');
+   else if(b.kind==='audio_url')add('msg assistant',
+     '<audio controls preload="none" src="'+b.url+'" style="width:100%"></audio>'+
+     '<div class="cap">🔊 <a href="'+b.url+'" target="_blank">'+esc(b.name||'audio')+'</a> · <a href="'+b.url+'" download="'+esc(b.name||'audio')+'">save</a></div>');
+   else{const d=det();d.innerHTML='<summary>tool result</summary><pre>'+esc(b.text)+'</pre>';
+     const w=add('msg assistant','');w.appendChild(d)}})
+ else if(e.type==='result')add('msg meta',(e.is_error?'✗ turn ended (error)':'✓ done')+
+   (e.cost!=null&&e.cost>0?' · $'+e.cost.toFixed(4):''))
+ else if(e.type==='approval'){
+   const box=el('div','msg approve');
+   box.innerHTML='<b>'+esc(e.tool)+'</b> wants to run:<div class="in">'+esc(e.input)+'</div>';
+   const ok=el('button','act','Allow'),no=el('button','','Deny');
+   ok.onclick=()=>{api('/approve',{request_id:e.request_id,allow:true});box.replaceChildren(el('span','msg meta','allowed →'))};
+   no.onclick=()=>{api('/approve',{request_id:e.request_id,allow:false});box.replaceChildren(el('span','msg meta','denied'))};
+   box.appendChild(ok);box.appendChild(no);log.appendChild(box);stick()}
+ else if(e.type==='fatal')add('msg err','⚠ '+esc(e.text))}
+
+// ── sessions ───────────────────────────────────────────────────────────────────────
+const splash=document.getElementById('splash'),slist=document.getElementById('slist');
+
+function ago(ts){const s=(Date.now()/1000)-ts;
+ if(s<60)return'just now';if(s<3600)return Math.floor(s/60)+'m ago';
+ if(s<86400)return Math.floor(s/3600)+'h ago';return Math.floor(s/86400)+'d ago'}
+
+function showSplash(on){splash.classList.toggle('hidden',!on);if(on)loadSessions()}
+
+async function loadSessions(){
+ try{
+  const d=await(await fetch('/sessions')).json();
+  slist.innerHTML='';
+  if(!d.sessions.length){slist.innerHTML='<div class="empty">No previous sessions yet.</div>';return}
+  for(const s of d.sessions){
+   const row=el('div','srow');
+   const actions=el('div','actions');
+   const edit=el('button','edit','Edit'), del=el('button','del','Delete');
+   actions.appendChild(edit);actions.appendChild(del);
+   const slide=el('div','slide');
+   const body=el('div','body');
+   body.innerHTML='<div class="nm">'+esc(s.name)+'</div><div class="meta">'+
+     (s.current?'<span class="cur">current</span> · ':'')+ago(s.updated)+'</div>';
+   body.onclick=()=>{ if(row.classList.contains('open')){close(row);return} openSession(s.id) };
+   slide.appendChild(body);
+   row.appendChild(actions);row.appendChild(slide);
+   edit.onclick=()=>{close(row);
+   try{startRename(row,body,s)}catch(err){add('msg err','rename failed: '+esc(String(err)))}};
+   del.onclick=()=>confirmDelete(row,s);
+   swipeable(row,slide);
+   slist.appendChild(row);
+  }
+ }catch(e){slist.innerHTML='<div class="empty">Could not load sessions.</div>'}
+}
+
+// Only one row open at a time — two sets of exposed buttons is how you delete the
+// wrong session.
+function close(row){row.classList.remove('open')}
+function closeAll(except){for(const r of slist.querySelectorAll('.srow'))if(r!==except)close(r)}
+
+// Horizontal drag opens the actions; vertical movement is left to the scroller, so
+// swiping down the list never snags a row. Pointer events cover touch and mouse.
+function swipeable(row,slide){
+ let x0=0,y0=0,drag=null,id=null;
+ slide.addEventListener('pointerdown',e=>{
+  if(e.target.tagName==='INPUT')return;
+  x0=e.clientX;y0=e.clientY;drag=null;id=e.pointerId});
+ slide.addEventListener('pointermove',e=>{
+  if(id===null||e.pointerId!==id)return;
+  const dx=e.clientX-x0, dy=e.clientY-y0;
+  if(drag===null){
+   if(Math.abs(dx)<8&&Math.abs(dy)<8)return;
+   drag=Math.abs(dx)>Math.abs(dy);          // decide once: horizontal or vertical
+   if(drag){closeAll(row);slide.style.transition='none'}
+  }
+  if(!drag)return;
+  const base=row.classList.contains('open')?-156:0;
+  const off=Math.min(0,Math.max(-156,base+dx));
+  slide.style.transform='translateX('+off+'px)';
+ });
+ const end=e=>{
+  if(id===null)return;
+  const dx=e.clientX-x0;id=null;
+  slide.style.transition='';slide.style.transform='';
+  if(drag===false||drag===null)return;
+  const wasOpen=row.classList.contains('open');
+  // A short flick is enough; a slow drag needs to pass the halfway mark.
+  if(!wasOpen&&dx<-45)row.classList.add('open');
+  else if(wasOpen&&dx>45)close(row);
+ };
+ slide.addEventListener('pointerup',end);
+ slide.addEventListener('pointercancel',end);
+}
+
+async function confirmDelete(row,s){
+ // Native confirm: it is the dialog the OS already uses, and it works in a
+ // standalone PWA where a custom modal would have to fight the keyboard.
+ if(!confirm('Delete "'+s.name+'"?\n\nThis removes the session and its transcript.'))
+  {close(row);return}
+ try{
+  await api('/sessions/delete',{id:s.id});
+ }catch(e){alert('Could not delete that session.')}
+ loadSessions();
+}
+
+// Inline rename, the way a phone app does it: tap the pencil, the title becomes a
+// field, Enter or blur saves, Escape abandons. An empty name clears the override and
+// falls back to the opening prompt.
+function startRename(row,body,s){
+ const inpEl=el('input','rename');inpEl.value=s.name;
+ // Into the row's SLIDING layer, which is body's actual parent. Inserting into the
+ // row itself throws NotFoundError and kills this handler without a trace, which is
+ // what made Edit look dead after the swipe actions were added.
+ const host=body.parentNode||row;
+ body.style.display='none';host.insertBefore(inpEl,body);
+ inpEl.focus();inpEl.select();
+ let done=false;
+ const finish=async(save)=>{
+  if(done)return;done=true;
+  if(save){const nm=inpEl.value.trim();
+   try{await api('/sessions/name',{id:s.id,name:nm})}catch(e){}}
+  inpEl.remove();body.style.display='';loadSessions();
+ };
+ inpEl.addEventListener('keydown',e=>{
+  if(e.key==='Enter'){e.preventDefault();finish(true)}
+  if(e.key==='Escape'){e.preventDefault();finish(false)}});
+ inpEl.addEventListener('blur',()=>finish(true));
+}
+
+// Two halves of "resume": the fork reloads the transcript into the MODEL's context,
+// and this replays the same transcript into the PAGE. Without the second one the
+// conversation is intact but invisible, which just looks broken. Idempotent, because
+// both the tap and the server's "resumed" event call it.
+async function renderTranscript(id){
+ try{
+  const d=await(await fetch(RO?'/watch/transcript'
+    :('/sessions/transcript?id='+encodeURIComponent(id)))).json();
+  log.replaceChildren();
+  (d.events||[]).forEach(handle);
+  add('msg meta','— resumed —');
+  toBottom();
+ }catch(e){add('msg meta','could not load the earlier messages')}
+}
+
+async function openSession(id){
+ log.replaceChildren();
+ showSplash(false);
+ add('msg meta','loading history…');
+ await renderTranscript(id);
+ try{await api('/sessions/open',{id})}catch(e){add('msg err','could not resume that session')}
+}
+
+document.getElementById('startnew').onclick=async()=>{
+ if(BOX&&/meeseeks/i.test(BOX.title))summon();
+ log.innerHTML='';showSplash(false);await api('/new',{});
+};
+document.getElementById('refresh').onclick=loadSessions;
+// Stop: for the turn that will never finish on its own. Keeps the session.
+document.getElementById('stopbtn').onclick=async()=>{
+ setBusy(false);
+ add('msg meta','stopping…');
+ try{await api('/interrupt',{})}catch(e){add('msg err','could not stop the turn')}
+};
+document.getElementById('sessbtn').onclick=()=>showSplash(true);
+
+// ── working indicator ──────────────────────────────────────────────────────────────
+const work=document.getElementById('work'),workWhat=document.getElementById('workwhat'),
+      workSecs=document.getElementById('worksecs');
+let busySince=0,busyTimer=null;
+
+// Tool names are for the model; these are for a person glancing at a phone.
+const ACTIVITY={
+ thinking:'thinking…', writing:'writing the answer…',
+ run_shell_command:'running a command…', read_file:'reading a file…',
+ write_file:'writing a file…', edit:'editing a file…', glob:'looking for files…',
+ grep:'searching the code…', web_fetch:'reading a web page…',
+ 'mcp__local-search__web_search':'searching the web…',
+ 'mcp__local-search__web_fetch':'reading a web page…',
+ task:'running a subagent…', tool_search:'choosing a tool…'
+};
+
+function tick(){
+ if(!busySince){workSecs.textContent='';return}
+ const s=Math.max(0,Math.round(Date.now()/1000-busySince));
+ workSecs.textContent=s<60?s+'s':Math.floor(s/60)+'m '+(s%60)+'s';
+}
+
+function setBusy(on,activity,since,detail){
+ work.classList.toggle('on',!!on);
+ if(on){
+  const label=ACTIVITY[activity]||(activity?activity.replace(/_/g,' ')+'…':'working…');
+  // The detail is what separates "thinking hard" from "wedged": you can see the
+  // command or the query it is actually on.
+  workWhat.textContent=detail?label+' '+detail:label;
+  busySince=since||busySince||Date.now()/1000;
+  tick();
+  if(!busyTimer)busyTimer=setInterval(tick,1000);
+ }else{
+  busySince=0;
+  if(busyTimer){clearInterval(busyTimer);busyTimer=null}
+  workSecs.textContent='';
+ }
+}
+
+// ── image viewer ───────────────────────────────────────────────────────────────────
+// Click any image in the log and it opens full-size. The overlay reuses the <img>'s
+// own src — for a screenshot that is /file?path=…, the original bytes, not the
+// downscaled thumb — so nothing is re-requested from a second source.
+const zoomBox=document.getElementById('zoom'),zimg=document.getElementById('zimg'),
+      zpct=document.getElementById('zpct'),
+      zclose=document.getElementById('zclose'),zout=document.getElementById('zout'),
+      zin=document.getElementById('zin'),zfit=document.getElementById('zfit');
+const ZMAX=16;
+let zk=1,zt=[0,0];                      // scale, then pan in px. zk=1 means "fit".
+
+function zpaint(){
+ zimg.style.transform='translate('+zt[0]+'px,'+zt[1]+'px) scale('+zk+')';
+ zpct.textContent=Math.round(zk*100)+'%';
+ zoomBox.classList.toggle('drag',zk>1)}
+
+// Without this you can fling a zoomed image off-screen and lose it entirely.
+function zclamp(){
+ const w=zimg.clientWidth||1,h=zimg.clientHeight||1;
+ const mx=Math.max(0,(zk*w-innerWidth)/2),my=Math.max(0,(zk*h-innerHeight)/2);
+ zt[0]=Math.min(mx,Math.max(-mx,zt[0]));zt[1]=Math.min(my,Math.max(-my,zt[1]))}
+
+// Zoom about a screen point so the pixel under the cursor or pinch centre stays put
+// instead of drifting away, which is what makes wheel-zoom usable on a big screenshot.
+function zzoom(px,py,k){
+ const k2=Math.min(ZMAX,Math.max(1,k));
+ const sx=px-innerWidth/2,sy=py-innerHeight/2,r=k2/zk;
+ zk=k2;
+ if(zk===1)zt=[0,0];else zt=[sx-r*(sx-zt[0]),sy-r*(sy-zt[1])];
+ zclamp();zpaint()}
+
+function openZoom(src,alt){
+ zimg.src=src;zimg.alt=alt||'';zk=1;zt=[0,0];zpaint();
+ zoomBox.classList.add('on');zclose.focus()}
+
+function closeZoom(){
+ zoomBox.classList.remove('on');
+ zimg.removeAttribute('src')}         // drops the base64 copy; some of these are big
+
+log.addEventListener('click',e=>{
+ if(e.target.tagName==='IMG')openZoom(e.target.currentSrc||e.target.src,e.target.alt)});
+zclose.onclick=closeZoom;
+zfit.onclick=()=>{zk=1;zt=[0,0];zpaint()};
+zin.onclick=()=>zzoom(innerWidth/2,innerHeight/2,zk*1.4);
+zout.onclick=()=>zzoom(innerWidth/2,innerHeight/2,zk/1.4);
+
+zoomBox.addEventListener('wheel',e=>{e.preventDefault();
+ zzoom(e.clientX,e.clientY,zk*Math.exp(-e.deltaY*.0015))},{passive:false});
+zoomBox.addEventListener('dblclick',e=>zzoom(e.clientX,e.clientY,zk>1?1:2.5));
+
+// One pointer pans, two pinch. touch-action:none on the overlay is what lets the
+// gestures be ours rather than the browser's page scroll.
+const zp=new Map();let zpinch=null,zmoved=false;
+zoomBox.addEventListener('pointerdown',e=>{
+ if(e.target.closest('button'))return;
+ zmoved=false;zp.set(e.pointerId,[e.clientX,e.clientY]);
+ if(zp.size===2){const p=[...zp.values()];
+  zpinch={d:Math.hypot(p[0][0]-p[1][0],p[0][1]-p[1][1]),k:zk}}});
+zoomBox.addEventListener('pointermove',e=>{
+ if(!zp.has(e.pointerId))return;
+ const prev=zp.get(e.pointerId);zp.set(e.pointerId,[e.clientX,e.clientY]);
+ if(zp.size>=2&&zpinch){const p=[...zp.values()];
+  zmoved=true;
+  zzoom((p[0][0]+p[1][0])/2,(p[0][1]+p[1][1])/2,zpinch.k*(Math.hypot(p[0][0]-p[1][0],p[0][1]-p[1][1])/zpinch.d))}
+ else if(zk>1){zmoved=true;
+  zt[0]+=e.clientX-prev[0];zt[1]+=e.clientY-prev[1];zclamp();zpaint()}});
+const zdrop=e=>{zp.delete(e.pointerId);if(zp.size<2)zpinch=null};
+zoomBox.addEventListener('pointerup',zdrop);
+zoomBox.addEventListener('pointercancel',zdrop);
+// Only a click that was not the tail of a pan closes it, so dragging the image
+// around never dismisses the thing you were trying to read.
+zoomBox.addEventListener('click',e=>{if(e.target===zoomBox&&!zmoved)closeZoom()});
+
+addEventListener('keydown',e=>{
+ if(!zoomBox.classList.contains('on'))return;
+ if(e.key==='Escape')closeZoom();
+ else if(e.key==='+'||e.key==='=')zzoom(innerWidth/2,innerHeight/2,zk*1.4);
+ else if(e.key==='-')zzoom(innerWidth/2,innerHeight/2,zk/1.4)});
+
+// ── attachments ────────────────────────────────────────────────────────────────────
+// The agent cannot be handed bytes — it reads files off the box's disk — so a photo from
+// the phone is uploaded first and the prompt carries its path. It reads the image
+// with its own file tool, which is also what makes the picture appear in the chat.
+const pick=document.getElementById('pick'),pending=document.getElementById('pending');
+let attached=[];
+
+document.getElementById('attach').onclick=()=>pick.click();
+pick.onchange=async()=>{
+ for(const file of pick.files){
+  const note=el('span','up','uploading '+file.name+'…');
+  pending.appendChild(note);pending.classList.add('on');
+  try{
+   const fd=new FormData();fd.append('file',file);
+   const r=await fetch('/upload',{method:'POST',body:fd});
+   const d=await r.json();
+   note.remove();
+   if(!r.ok||d.error){add('msg err','upload failed: '+esc(d.error||r.status));continue}
+   attached.push(d);
+   const t=el('div','thumb');
+   t.innerHTML='<img src="'+d.url+'" alt="'+esc(d.name)+'">';
+   const x=el('button','x','\u00d7');
+   x.onclick=()=>{attached=attached.filter(a=>a.path!==d.path);t.remove();
+                  if(!attached.length)pending.classList.remove('on')};
+   t.appendChild(x);pending.appendChild(t);
+  }catch(err){note.remove();add('msg err','upload failed')}
+ }
+ pick.value='';
+ if(!attached.length&&!pending.querySelector('.up'))pending.classList.remove('on');
+};
+
+function clearAttachments(){attached=[];pending.replaceChildren();pending.classList.remove('on')}
+
+// ── questions from the agent ───────────────────────────────────────────────────────
+function renderAsk(e){
+ const box=el('div','ask');box.id='ask-'+e.id;
+ let html='<div class="q">'+esc(e.text)+'</div>';
+ if(e.detail)html+='<pre>'+esc(e.detail)+'</pre>';
+ box.innerHTML=html;
+ const opts=el('div','opts');
+ (e.options||['OK']).forEach(o=>{
+  const b=el('button',/^(approve|yes|allow)$/i.test(o)?'yes':
+             /^(deny|no|cancel|reject)$/i.test(o)?'no':'');
+  b.textContent=o;
+  b.onclick=()=>answerAsk(e.id,o);
+  opts.appendChild(b);
+ });
+ box.appendChild(opts);
+ log.appendChild(box);stick();
+ // A question that arrives while the phone is asleep is the whole reason this
+ // exists, so make it noticeable when the screen comes back.
+ if(navigator.vibrate)try{navigator.vibrate(60)}catch(err){}
+}
+
+async function answerAsk(id,answer){
+ markAnswered(id,answer);
+ try{await api('/ui/answer',{id,answer})}catch(e){add('msg err','could not send that answer')}
+}
+
+function markAnswered(id,answer){
+ const box=document.getElementById('ask-'+id);
+ if(!box||box.classList.contains('done'))return;
+ box.classList.add('done');
+ const opts=box.querySelector('.opts');if(opts)opts.remove();
+ const line=el('div','chosen','\u2713 '+esc(String(answer===null?'no answer':answer)));
+ box.appendChild(line);
+}
+
+async function api(path,body){
+ if(RO)return null;                      // belt to the server's braces: never even ask
+ // Hand the parsed answer back: the share checkbox needs the link the server returns,
+ // and this used to resolve undefined, so turning sharing ON reported it as off.
+ try{const r=await fetch(path,{method:'POST',headers:{'content-type':'application/json'},
+  body:JSON.stringify(body||{})});return await r.json()}catch(e){return null}}
+async function poll(){try{const s=await(await fetch(RO?'/watch/status':'/status')).json();if(!RO)paintBox(s.box);dot.className='dot '+(s.alive?'on':'off');
+ // The select used to render its first option ("ask per tool") on every load no
+ // matter what the server was actually running, so the one control that turns the
+ // asking off looked like it had never been touched.
+ if(typeof s.watchers==='number')paintEyes(s.watchers);
+ if(typeof s.desktop==='boolean'&&s.desktop!==deskBox.checked)paintDesk(s.desktop);
+ if(typeof s.share==='boolean'&&s.share!==shareBox.checked)paintShare(s.share);
+ if(typeof s.autopilot==='boolean'&&s.autopilot!==autoBox.checked)paintAuto(s.autopilot);
+ if(s.mode&&!s.autopilot&&s.mode!==modeSel.value)modeSel.value=s.mode;
+ setBusy(s.busy,s.activity,s.since)}catch{}}
+
+// iOS suspends fetch streams when the tab sleeps: the socket never errors, the read
+// just hangs. A watchdog + abort-on-wake forces a reconnect, and the server replays
+// everything missed from lastTs.
+let ac=null;
+async function stream(){
+ while(true){
+  ac=new AbortController();
+  let lastData=Date.now();
+  const wd=setInterval(()=>{if(Date.now()-lastData>45000)ac.abort()},5000);
+  try{
+   const r=await fetch((RO?'/watch/events':'/events')+'?last='+lastTs,{signal:ac.signal});
+   const rd=r.body.getReader(),dec=new TextDecoder();let buf='';
+   while(true){const{value,done}=await rd.read();if(done)break;
+    lastData=Date.now();
+    buf+=dec.decode(value,{stream:true});
+    let i;while((i=buf.indexOf('\n\n'))>=0){const chunk=buf.slice(0,i);buf=buf.slice(i+2);
+     for(const line of chunk.split('\n'))if(line.startsWith('data: ')){
+      const evt=JSON.parse(line.slice(6));if(evt.ts>lastTs)lastTs=evt.ts;handle(evt)}}}
+  }catch(e){if(!e||e.name!=='AbortError')dot.className='dot off'}
+  finally{clearInterval(wd);ac=null}
+  await new Promise(r=>setTimeout(r,1500));poll()}}
+
+// ── Meeseeks box ───────────────────────────────────────────────────────────────────
+// The server says what this box is: its title, whether Rick's terms stand between the
+// user and the button.
+let BOX=null;
+const summonAudio=new Audio('/summon.m4a');summonAudio.preload='auto';
+function summon(){
+ try{summonAudio.currentTime=0;summonAudio.play().catch(()=>{})}catch{}
+ const m=document.getElementById('mee');m.classList.remove('pop');void m.offsetWidth;m.classList.add('pop')}
+// The splash button waits hidden until we know what box this is, so the plain "Start new
+// session" never flashes before the Meeseeks box. The answer is remembered for next load.
+function showStart(){document.getElementById('startnew').classList.add('ready')}
+function meeBox(){
+ const nb=document.getElementById('startnew');
+ if(!nb.classList.contains('meebox')){
+  // A Meeseeks box instead of "Start new session": press the button, a fresh Meeseeks pops out.
+  nb.classList.add('meebox');nb.addEventListener('pointerdown',()=>{nb.classList.add('pressed');setTimeout(()=>nb.classList.remove('pressed'),450)});nb.title='press for a new Meeseeks (new session)';nb.setAttribute('aria-label','start new session');
+  nb.innerHTML='<img src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAW8AAAGACAMAAABV8BNxAAAB/lBMVEUAAAARMzJ2/7oAAAAAIiIzZmYiVUSIu7pEZmZUiIhVzP4yZpgz3ZkBEQ9mmZZ1qqr+//9Kd3YiREQAAABLiHUAAACq//9E7plpqplVmY8uZlAAAAAAAAARRCgiMzNT7qoAAABmiIgAAABm7qp3u6pVu4gziFVw3f8AIhEzd2aQ7vxGmbBVzIgAESIoVWgzd0Rm3ZlVqncRM0eZ//9EmWZV/6oiVTNEVVUz7pmL3fczd5QRRFBEiKp3zNIiIiKr7v+IiIhEqsxmu8x37v8iRGZERETd//9VqrtVu91mqsy7u7sziJmI3d3d3d13d3eZmZnM7v9mZmbu7u4ziKqIqqqqqqrMzMwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAALWrdHAAAAgHRSTlMA///+////////////////////jP+3//////9J1////yf/bP////////////////////////////////////////////////////////////////////8AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAfz1CcAACnWSURBVHja7Z33Q9tI08cRlmSJRFIkTMAOOJgSICGUtEu5e67Xp739//9TXlt16+xskTHB8+MdScyH4bszszOzGxv33o52BoPBztHG2pZgz7YHte0/W9Po2Q5b2KXtHK6R9Al7f8Da9hpLT7CPeNilrWV8ibDXMr5k2GsZ71+zBba9Jt4r7GTK+fhaVWzjbCnsMI/j3ON0fH1ymkv2zkDq2XPYpQU+LytrJzdgvS3X6RZ2aWEyWDt5TyIyN28Ss1asz05zk4uIGPbC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" width="152" height="159" alt="">Press the box for a new Mr. Meeseeks.'}}
+try{if(localStorage.getItem('meebox')==='1'){meeBox();showStart()}}catch{}
+setTimeout(showStart,2500);   // never leave it hidden if the server is slow to say
+function paintBox(b){
+ if(!b)return;const first=!BOX;BOX=b;
+ document.title=b.title;document.querySelectorAll('header b, #splash h1').forEach(e=>e.textContent=b.title);
+ document.getElementById('termsTitle').textContent=b.title;
+ document.getElementById('termsText').textContent='\u201c'+b.terms_text+'\u201d';
+ document.getElementById('terms').classList.toggle('on',!!(b.terms&&!b.agreed));
+ const noDesk=b.desktop===false;
+ if(/meeseeks/i.test(b.title))meeBox();
+ try{localStorage.setItem('meebox',/meeseeks/i.test(b.title)?'1':'0')}catch{}
+ showStart();
+ document.getElementById('deskwrap').hidden=noDesk;document.getElementById('desknote').hidden=!noDesk;
+ }
+const termsOk=document.getElementById('termsOk'),termsGo=document.getElementById('termsGo');
+termsOk.onchange=()=>{termsGo.disabled=!termsOk.checked};
+termsGo.onclick=async()=>{
+ if(!termsOk.checked)return;const r=await api('/terms',{agreed:true});
+ if(r&&r.agreed){document.getElementById('terms').classList.remove('on');summon()}};
+stream();poll();setInterval(poll,10000);
+document.addEventListener('visibilitychange',()=>{if(!document.hidden){poll();if(ac)ac.abort()}});
+
+function submit(){
+ const t=inp.value.trim();
+ if(!t&&!attached.length)return;
+ inp.value='';
+ let text=t,imgs=[];
+ // One id for this turn, stamped on the bubbles drawn here and echoed back by the
+ // server. Drawing locally keeps sending instant; the id is what stops the echo
+ // from drawing it a second time on THIS device while every other device draws it.
+ const uid=Math.random().toString(36).slice(2);
+ if(attached.length){
+  // Named explicitly so the model reads them rather than guessing what was meant.
+  const list=attached.map(a=>a.path).join('\n');
+  text=(t?t+'\n\n':'')+'Attached image'+(attached.length>1?'s':'')+
+       ' (read '+(attached.length>1?'these files':'this file')+'):\n'+list;
+  imgs=attached.map(a=>a.url);
+  attached.forEach(a=>{add('msg user','<img src="'+a.url+'" alt="'+esc(a.name)+'">').dataset.uid=uid});
+  clearAttachments();
+ }
+ add('msg user',md(t||'(image)')).dataset.uid=uid;
+ const t2=text;
+ if(t==='/new')api('/new');else if(t==='/exit')api('/exit');
+ else api('/send',{text:t2,display:t||'(image)',images:imgs,uid:uid})}
+document.getElementById('send').onclick=submit;
+inp.addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();submit()}});
+document.getElementById('newbtn').onclick=()=>{api('/new');if(BOX&&/meeseeks/i.test(BOX.title))summon()};
+modeSel.onchange=()=>{api('/mode',{mode:modeSel.value});add('msg meta','mode → '+modeSel.value)};
+const deskBox=document.getElementById('desktop'),deskWrap=document.getElementById('deskwrap');
+function paintDesk(on){deskBox.checked=on;deskWrap.classList.toggle('on',on)}
+deskBox.onchange=async()=>{
+ paintDesk(deskBox.checked);
+ try{await api('/desktop',{on:deskBox.checked});
+  add('msg meta',deskBox.checked
+   ? 'desktop driver ON — the agent can move this machine\u2019s pointer, type on its keyboard and photograph its screen'
+   : 'desktop driver off')}
+ catch(e){add('msg err','could not change the desktop driver')}};
+const shareBox=document.getElementById('share'),shareWrap=document.getElementById('sharewrap');
+function paintShare(on){shareBox.checked=on;shareWrap.classList.toggle('on',on)}
+const eyes=document.getElementById('eyes');
+// Who is actually on the stream, not just whether it is open. Pushed the moment
+// someone joins or leaves, and polled as a backstop.
+function paintEyes(n){eyes.textContent=n===1?'1 watching':n+' watching';
+ eyes.classList.toggle('on',n>0)}
+shareBox.onchange=async()=>{
+ paintShare(shareBox.checked);
+ try{const r=await api('/share',{on:shareBox.checked});
+  if(r&&r.share){const u=location.origin+r.url;
+   // Shown once, as a tappable link. The watch secret is not the session token: giving
+   // it away lets someone READ, never send.
+   add('msg meta','shared — anyone with this link can watch, including every tool call '+
+       'and its output:<br><a href="'+u+'" target="_blank">'+u+'</a>')}
+  else add('msg meta','sharing stopped — the link no longer works')}
+ catch(e){add('msg err','could not change sharing')}};
+const expBox=document.getElementById('expand'),expWrap=document.getElementById('expwrap');
+function paintExpand(on){EXPAND=on;expBox.checked=on;expWrap.classList.toggle('on',on);
+ if(typeof follow!=='undefined'&&follow)raf(()=>{if(follow)glue()});
+ // Apply to what is already on screen as well as to what comes next, and remember it
+ // per device — this is how you like to watch, not something the session decides.
+ log.querySelectorAll('details').forEach(d=>{d.open=on});
+ try{localStorage.setItem('rq_expand',on?'1':'0')}catch(e){}}
+expBox.onchange=()=>paintExpand(expBox.checked);
+paintExpand(EXPAND);
+const autoBox=document.getElementById('auto'),autoWrap=document.getElementById('autowrap');
+// Autopilot forces the mode, so show that rather than leaving the select contradicting
+// the checkbox. The server is still the authority; poll() corrects both.
+function paintAuto(on){autoBox.checked=on;autoWrap.classList.toggle('on',on);
+ if(on)modeSel.value='bypassPermissions';modeSel.disabled=on}
+autoBox.onchange=async()=>{paintAuto(autoBox.checked);
+ try{const r=await api('/autopilot',{on:autoBox.checked});if(r&&r.mode)modeSel.value=r.mode}
+ catch(e){add('msg err','could not change autopilot')}};
+add('msg meta','connected — anything you send runs a real Qwen agent session in this box');
+</script>
+<script>
+// Register the service worker. It caches only icons (see sw.js) — the session data
+// is live and must never come from a cache. A failure here is not worth surfacing:
+// the app works fine without it, it just is not installable.
+if (RO) {
+  // No composer, and none of the controls that act on the session. "expand all" stays:
+  // it is a view preference, stored in this browser, and touches nothing.
+  document.querySelector('footer').style.display = 'none';
+  ['mode','autowrap','sharewrap','deskwrap','newbtn','sessbtn','stopbtn','pending']
+    .forEach((id) => { const n = document.getElementById(id); if (n) n.style.display = 'none'; });
+  const tag = document.createElement('span');
+  tag.textContent = 'read-only';
+  tag.style.cssText = 'font-size:12px;color:var(--dim);border:1px solid var(--border);' +
+    'border-radius:999px;padding:3px 10px';
+  document.querySelector('header .spacer').after(tag);
+  // Straight into the live session, with its history — not the session picker, which a
+  // viewer cannot use and must not see the contents of.
+  window.addEventListener('load', () => { showSplash(false); renderTranscript('live'); });
+} else if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => { showSplash(true); });
+window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/sw.js').catch(() => {});
+  });
+}
+</script>
+</body>
+</html>
